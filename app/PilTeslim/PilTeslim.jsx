@@ -1,8 +1,12 @@
 import Header from "@/components/Header";
+import { useAuth } from "@/context/AuthContext";
+import { createDelivery } from "@/services/api"; // YENİ EK: Backend POST
+import { uploadImage } from "@/services/uploadimage";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router"; // YENİ EK: Router for navigation
 import { useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -11,16 +15,22 @@ import {
   View,
 } from "react-native";
 import { Button, Card, Text, TextInput } from "react-native-paper";
+import Toast from "react-native-toast-message";
+
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [photo, setPhoto] = useState(null);
   const [adet, setAdet] = useState("");
   const [aciklama, setAciklama] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false); // YENİ EK: Loading state
   const cameraRef = useRef(null);
+  const router = useRouter(); // YENİ EK: Success navigation
 
   const params = useLocalSearchParams();
+  const { user } = useAuth();
 
+  console.log("pil teslim etme ", user.e_posta); // Production'da kaldır
   if (!permission)
     return (
       <View>
@@ -51,15 +61,49 @@ export default function App() {
     setPhoto(null);
   };
 
-  const handleSubmit = () => {
+  // YENİ EK: Submit handler - Upload + Backend POST
+  const handleSubmit = async () => {
     if (!photo || !adet || !aciklama) {
       setError("Lütfen tüm alanları doldurun!");
       return;
     }
 
     setError("");
-    alert("Teslim edildi!");
-    // Buraya backend'e gönderme işlemi eklenebilir
+    setLoading(true);
+
+    try {
+      // 1. Cloudinary upload
+      const imageUrl = await uploadImage(photo, user.e_posta);
+      if (!imageUrl) throw new Error("Fotoğraf yüklenemedi.");
+
+      // 2. Backend POST
+      const deliveryData = {
+        image_url: imageUrl,
+        quantity: parseInt(adet),
+        description: aciklama,
+        kurum_id: parseInt(params.kurum_id), // Params'tan ID
+      };
+
+      const response = await createDelivery(deliveryData);
+      console.log("Teslim başarı:", response);
+
+      Toast.show({
+        type: "success",
+        text1: "Teslim Etme Başarılı!",
+        text2: "Puanınız yakında eklenecek",
+      });
+      router.push("/(tabs)/PilTeslimNoktalari"); // Örnek navigation
+    } catch (err) {
+      console.log("Teslim hatası:", err);
+      Toast.show({
+        type: "error",
+        text1: "Başarısız İşlem!",
+        text2: `Hata: ${err.message || "Teslim edilemedi."}`,
+      });
+      setError(`Hata: ${err.message || "Teslim edilemedi."}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -102,7 +146,7 @@ export default function App() {
                 style={styles.infoIcon}
               />
               <Text variant="bodyMedium" style={styles.infoText}>
-                {params.kurum_tel || "Telefon Bilgisi Yok"}
+                {params.kurum_telefon || "Telefon Bilgisi Yok"}
               </Text>
             </View>
           </Card.Content>
@@ -191,22 +235,30 @@ export default function App() {
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <Button
-              icon="check"
+              icon={loading ? "loading" : "check"} // YENİ EK: Loading icon
               mode="contained"
               onPress={handleSubmit}
+              disabled={loading} // YENİ EK: Disable during loading
               style={styles.submitButton}
               buttonColor="#6200ee"
               contentStyle={styles.buttonContent}
             >
-              Teslim Et
+              {loading ? "Kaydediliyor..." : "Teslim Et"}
             </Button>
+
+            {/* YENİ EK: Global loading overlay (opsiyonel, card içinde) */}
+            {loading && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color="#6200ee" />
+                <Text style={styles.loadingText}>Teslim kaydediliyor...</Text>
+              </View>
+            )}
           </Card.Content>
         </Card>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
-
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
@@ -272,6 +324,24 @@ const styles = StyleSheet.create({
     padding: 16,
     elevation: 4,
     backgroundColor: "#fff",
+  },
+  loadingOverlay: {
+    // YENİ EK
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.8)",
+    borderRadius: 12,
+  },
+  loadingText: {
+    // YENİ EK
+    marginTop: 8,
+    color: "#6200ee",
+    fontSize: 16,
   },
   button: {
     marginBottom: 16,

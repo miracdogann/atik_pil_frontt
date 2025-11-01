@@ -4,7 +4,7 @@ import apiClient from "./apiClient";
 import { AUTH_ENDPOINTS, ENDPOINTS } from "./endpoints"; // endpoints'ten sabitler
 
 export const register = async (data) => {
-  console.log("api.js, register data", data);
+  // console.log("api.js, register data", data);
   try {
     const res = await apiClient.post(AUTH_ENDPOINTS.REGISTER, data);
     if (res.status !== 201) {
@@ -19,7 +19,7 @@ export const register = async (data) => {
 };
 
 export const login = async (email, password) => {
-  console.log("api.js, login data", { e_posta: email, password });
+  // console.log("api.js, login data", { e_posta: email, password });
   const res = await apiClient.post(AUTH_ENDPOINTS.LOGIN, {
     e_posta: email,
     password: password,
@@ -32,7 +32,7 @@ export const login = async (email, password) => {
 
 export const fetchUser = async () => {
   const res = await apiClient.get(AUTH_ENDPOINTS.USER);
-  console.log("api.js, fetched user data", res.data);
+  // console.log("api.js, fetched user data", res.data);
   return res.data;
 };
 
@@ -40,7 +40,29 @@ export const logout = async () => {
   await SecureStore.deleteItemAsync("accessToken");
   await SecureStore.deleteItemAsync("refreshToken");
 };
+export const createDelivery = async (data) => {
+  try {
+    const res = await apiClient.post(ENDPOINTS.DELIVERY, data);
+    if (res.status !== 201) {
+      throw new Error(`Teslim hatası: ${JSON.stringify(res.data)}`);
+    }
+    return res.data;
+  } catch (error) {
+    console.error("createDelivery error:", error.response?.data || error.message);
+    throw error;
+  }
+};
 
+export const createUserReward = async (data) => {
+  try {
+    const res = await apiClient.post(ENDPOINTS.USER_REWARD, data);
+    if (res.status !== 201) throw new Error("Sipariş oluşturulamadı.");
+    return res.data;
+  } catch (error) {
+    console.error("createUserReward error:", error);
+    throw error;
+  }
+};
 // <-- EKLE: Getter fonksiyonlar buraya taşındı (cycle önlendi)
 export const getPoints = () => apiClient.get(ENDPOINTS.POINTS);
 export const getDelivery = () => apiClient.get(ENDPOINTS.DELIVERY);

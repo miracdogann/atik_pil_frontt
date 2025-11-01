@@ -14,13 +14,13 @@ export const AUTH_ENDPOINTS = {
 
 // Diğer endpoint'ler sabit olarak (fonksiyonlar api.js'te)
 export const ENDPOINTS = {
-  POINTS: "/pil-teslim-noktalari/",
-  DELIVERY: "/pil-teslimleri/",
+  POINTS: "/actions/pil-teslim-noktalari/",
+  DELIVERY: "/actions/pil-teslimleri/",
   BATTER_TYPES: "/pil-tipleri",
-  REWARDS: "/action/rewards/",
+  REWARDS: "/actions/rewards/",
   STAFF: "/staff/",
   USERS: "/users/",
-  USER_REWARD: "/user-rewards/",
+  USER_REWARD: "/actions/user-rewards/",
   FEED_BACKS: "/feedbakcs/",  // Typo: 'feedbacks' olmalı, ama mevcut tut
   BATTERY_SIZES: "/battery-size",
 };

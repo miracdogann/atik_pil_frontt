@@ -1,16 +1,24 @@
+import { useAuth } from "@/context/AuthContext"; // <-- Mevcut puanı ve güncelleme için eklendi
 import { useEffect, useState } from "react";
-import { Dimensions, FlatList, StyleSheet, View } from "react-native";
+import {
+  Dimensions,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import {
   ActivityIndicator,
   Button,
   Card,
+  Divider,
   Modal,
   Portal,
   Text,
   TextInput,
 } from "react-native-paper";
 import Header from "../../components/Header";
-import { getRewards } from "../../services/api";
+import { createUserReward, getRewards } from "../../services/api"; // <-- Backend POST için eklendi
 
 const { width } = Dimensions.get("window");
 const CARD_MARGIN = 10;
@@ -18,10 +26,59 @@ const CARD_WIDTH = (width - CARD_MARGIN * 6) / 2; // 2 kart + marginlar
 
 const Reward = () => {
   const [visible, setVisible] = useState(false);
-  const showModal = () => setVisible(true);
+  const showModal = (reward) => {
+    // <-- Orijinal yapıyı bozmadan güncellendi: reward parametresi eklendi
+    setSelectedReward(reward);
+    setFormData({
+      // <-- Form verilerini sıfırla (sadece address)
+      address: "",
+    });
+    setVisible(true);
+  };
   const hideModal = () => setVisible(false);
   const [loading, setLoading] = useState(true);
   const [rewards, setRewards] = useState([]);
+
+  // <-- Backend entegrasyonu için minimal ek state'ler (hooks kuralına uyumlu, orijinal yapıyı bozmaz)
+  const [selectedReward, setSelectedReward] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    address: "",
+  });
+
+  const { user, updateUser } = useAuth(); // <-- Mevcut puan için (updateUser puan güncellemesi için)
+
+  // <-- Sipariş onayı (backend entegrasyonu – orijinal yapıyı bozmaz)
+  const handleConfirmOrder = () => {
+    if (!formData.address.trim()) {
+      alert("Lütfen adresi doldurun.");
+      return;
+    }
+
+    if (user.point < selectedReward.point) {
+      alert(`Yetersiz puan. Gerekli: ${selectedReward.point}`);
+      return;
+    }
+
+    setModalLoading(true);
+    createUserReward({
+      reward: selectedReward.reward_id,
+      adress: formData.address.trim(),
+    })
+      .then((response) => {
+        // <-- Güncel puanı yaz (response'tan veya local hesaplama)
+        const newPoint =
+          response.updated_point || user.point - selectedReward.point;
+        updateUser({ ...user, point: newPoint }); // <-- Context güncellemesi
+        alert(`Sipariş başarıyla alındı! Kalan puan: ${newPoint}`);
+        hideModal();
+      })
+      .catch((error) => {
+        console.error("Sipariş hatası:", error);
+        alert("Sipariş oluşturulamadı.");
+      })
+      .finally(() => setModalLoading(false));
+  };
 
   useEffect(() => {
     getRewards()
@@ -62,7 +119,7 @@ const Reward = () => {
       <Card.Actions style={styles.actions}>
         <Button
           mode="contained"
-          onPress={showModal}
+          onPress={() => showModal(item)} // <-- Orijinal yapıyı bozmadan güncellendi: item geçir
           buttonColor="#6200ee"
           style={styles.button}
         >
@@ -75,6 +132,12 @@ const Reward = () => {
   return (
     <View style={styles.container}>
       <Header />
+      {/* <-- Mevcut puanı göster (basit, orijinal yapıyı bozmaz) */}
+      <View style={styles.pointDisplay}>
+        <Text style={styles.pointText}>
+          Mevcut Puan: <Text style={styles.pointBold}>{user.point}</Text>
+        </Text>
+      </View>
       <FlatList
         data={rewards}
         keyExtractor={(item) => item.reward_id}
@@ -87,30 +150,46 @@ const Reward = () => {
         <Modal visible={visible} contentContainerStyle={styles.modalStyle}>
           <View style={styles.modalHeader}>
             <Text variant="headlineSmall">Sipariş Bilgileri</Text>
+            {selectedReward && (
+              <Text variant="bodyMedium" style={styles.selectedReward}>
+                {selectedReward.reward_name} - {selectedReward.point} Puan
+              </Text>
+            )}
           </View>
-          <View style={styles.modalForm}>
-            <TextInput label="Ad Soyad" mode="outlined" style={styles.input} />
-            <TextInput label="Telefon" mode="outlined" style={styles.input} />
+          <Divider style={styles.divider} />
+          <ScrollView
+            style={styles.modalForm}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* <-- Sadece address alanı – diğerleri kaldırıldı */}
             <TextInput
               label="Adres"
+              value={formData.address}
+              onChangeText={(text) =>
+                setFormData({ ...formData, address: text })
+              }
               mode="outlined"
               style={styles.input}
               multiline
               numberOfLines={3}
             />
-          </View>
+          </ScrollView>
+          <Divider style={styles.divider} />
           <View style={styles.modalFooter}>
             <Button
               mode="outlined"
               onPress={hideModal}
               style={styles.cancelButton}
+              disabled={modalLoading}
             >
               İptal
             </Button>
             <Button
               mode="contained"
-              onPress={() => {}}
+              onPress={handleConfirmOrder}
               style={styles.confirmButton}
+              loading={modalLoading}
+              disabled={modalLoading}
             >
               Onayla
             </Button>
@@ -126,6 +205,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f5f5f5",
   },
+  // <-- Mevcut puanı gösteren yeni style (minimal ek)
+  pointDisplay: {
+    padding: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  pointText: {
+    fontSize: 16,
+    color: "#333",
+    textAlign: "center",
+  },
+  pointBold: {
+    fontWeight: "bold",
+    color: "#6200ee",
+  },
   flatList: {
     padding: CARD_MARGIN,
   },
@@ -135,20 +230,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#fff",
     overflow: "hidden",
-    elevation: 4, // Gölge efekti için
+    elevation: 4,
   },
   cardImage: {
-    width: "100%", // Kart genişliğine tam oturur
-    height: CARD_WIDTH * 0.75, // Resim yüksekliği kart genişliğinin %75'i (oranı korur)
-    borderTopLeftRadius: 16, // Kartın yuvarlak köşelerine uyum
+    width: "100%",
+    height: CARD_WIDTH * 0.75,
+    borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    backgroundColor: "#f0f0f0", // Resim yüklenirken gri arka plan
+    backgroundColor: "#f0f0f0",
   },
   productName: {
     marginTop: 8,
     fontSize: 16,
     fontWeight: "600",
-    textAlign: "center", // Ürün adını ortalar
+    textAlign: "center",
   },
   points: {
     marginTop: 4,
@@ -167,9 +262,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  selectedReward: {
+    color: "#6200ee",
+    marginTop: 5,
+    fontWeight: "500",
+  },
   modalForm: {
     flex: 1,
-    justifyContent: "center",
   },
   input: {
     marginBottom: 15,
@@ -194,6 +293,10 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     borderRadius: 25,
     padding: 20,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#eee",
   },
 });
 

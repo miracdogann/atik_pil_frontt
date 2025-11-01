@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native"; // <-- EKLE: RefreshControl
 import { Avatar, Button, Divider, List, Text } from "react-native-paper";
@@ -149,17 +150,22 @@ const Profile = () => {
         />
         <Divider />
 
-        <List.Item
-          title="Pil Teslimleri"
-          description="Yapılan işlemler ve son durumları"
-          left={(props) => (
-            <List.Icon
-              {...props}
-              icon={require("../../assets/icons/battery.png")}
-              color="#6200ee"
-            />
-          )}
-        />
+        <TouchableOpacity
+          onPress={() => router.navigate("/PilTeslim/PilTeslimlerim")}
+        >
+          <List.Item
+            on
+            title="Pil Teslimlerim"
+            description="Yapılan işlemler ve son durumları"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={require("../../assets/icons/battery.png")}
+                color="#6200ee"
+              />
+            )}
+          />
+        </TouchableOpacity>
         <Divider />
 
         <List.Item
