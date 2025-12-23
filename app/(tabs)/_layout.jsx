@@ -1,9 +1,10 @@
 import { Tabs } from "expo-router";
-import React from "react";
-import { Dimensions, Image } from "react-native";
+import React, { useEffect } from "react";
+import { Dimensions, Image, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Import local icons from the assets folder
+// Import local icons
+import { useAuth } from "@/context/AuthContext";
 import MapIcon from "../../assets/icons/map4.png";
 import RewardIcon from "../../assets/icons/shopping-cart.png";
 import ProfileIcon from "../../assets/icons/user.png";
@@ -12,32 +13,51 @@ const { width } = Dimensions.get("window");
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const tabHeight = 60; // Base height in pixels, can be adjusted
-  const tabMargin = width * 0.05; // 5% of screen width for margin
-  const tabBorderRadius = width * 0.1; // 10% of screen width for border radius
-  const tabBottomOffset = -25; // Increased to lower the tab bar, adjust as needed
+  const { loadUser, isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadUser();
+    }
+  }, [isAuthenticated]);
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#6200EA",
-        tabBarInactiveTintColor: "#757575",
+        tabBarInactiveTintColor: "#000000ff",
+        tabBarShowLabel: true, // Yazıların görünmesini istiyorsan true, istemiyorsan false yap
+        tabBarLabelStyle: {
+          fontSize: 10,
+          marginBottom: 5, // İkon ile yazı arası boşluk (Android/iOS dengesi için)
+          fontWeight: "600",
+        },
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderRadius: tabBorderRadius,
           position: "absolute",
-          bottom: tabBottomOffset + insets.bottom, // Adjust for safe area
-          left: tabMargin,
-          right: tabMargin,
-          elevation: 5,
+          backgroundColor: "#ffffffd0",
+          borderRadius: 30, // Daha yumuşak yuvarlak köşeler
+          borderTopWidth: 0, // Üstteki ince çizgiyi kaldırır (iOS default)
+
+          // Yükseklik Ayarı
+          height: 70, // Yüzen bar için biraz daha geniş alan iyidir
+
+          // Konumlandırma (Hem iOS hem Android uyumlu)
+          bottom: Platform.OS === "ios" ? insets.bottom : 40, // iOS'te safe area, Android'de 20px boşluk
+          left: 20,
+          right: 20,
+
+          // Gölgelendirme (Cross-Platform)
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.2,
-          shadowRadius: 8,
-          height: tabHeight,
-          paddingHorizontal: width * 0.02, // 2% of screen width for padding
-          margin: 20,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1, // Daha modern, hafif gölge
+          shadowRadius: 10,
+          elevation: 10, // Android gölgesi
+        },
+        // İkonların ortalanması ve taşmaması için item stili
+        tabBarItemStyle: {
+          paddingTop: 10,
+          height: 60,
         },
       }}
     >
@@ -45,15 +65,14 @@ export default function TabLayout() {
         name="Map"
         options={{
           title: "Harita",
-          tabBarIcon: ({ focused, color, size }) => (
+          tabBarIcon: ({ focused, size }) => (
             <Image
               source={MapIcon}
               style={{
-                width: size, // icon’u biraz küçült
-                height: size,
-                tintColor: focused ? "#6200EA" : "#6200ea25",
-                resizeMode: "contain", // Görsel orantılı daralsın
-                alignSelf: "center", // Yatay ortala
+                width: 24, // Sabit boyut vermek kaymayı önler
+                height: 24,
+                tintColor: focused ? "#6200EA" : "#757575", // Opacity yerine renk değişimi daha net görünür
+                resizeMode: "contain",
               }}
             />
           ),
@@ -63,15 +82,14 @@ export default function TabLayout() {
         name="PilTeslimNoktalari"
         options={{
           title: "Pil Teslimi",
-          tabBarIcon: ({ focused, color, size }) => (
+          tabBarIcon: ({ focused, size }) => (
             <Image
               source={require("../../assets/icons/battery.png")}
               style={{
-                width: size,
-                height: size,
-                tintColor: focused ? "#6200EA" : "#6200ea25",
-                resizeMode: "contain", // Görsel orantılı daralsın
-                alignSelf: "center", // Yatay ortala
+                width: 24,
+                height: 24,
+                tintColor: focused ? "#6200EA" : "#757575",
+                resizeMode: "contain",
               }}
             />
           ),
@@ -81,15 +99,14 @@ export default function TabLayout() {
         name="Reward"
         options={{
           title: "Sepet",
-          tabBarIcon: ({ focused, color, size }) => (
+          tabBarIcon: ({ focused, size }) => (
             <Image
               source={RewardIcon}
               style={{
-                width: size,
-                height: size,
-                tintColor: focused ? "#6200EA" : "#6200ea25",
-                resizeMode: "contain", // Görsel orantılı daralsın
-                alignSelf: "center", // Yatay ortala
+                width: 24,
+                height: 24,
+                tintColor: focused ? "#6200EA" : "#757575",
+                resizeMode: "contain",
               }}
             />
           ),
@@ -100,15 +117,14 @@ export default function TabLayout() {
         name="Profile"
         options={{
           title: "Profil",
-          tabBarIcon: ({ focused, color, size }) => (
+          tabBarIcon: ({ focused, size }) => (
             <Image
               source={ProfileIcon}
               style={{
-                width: size,
-                height: size,
-                tintColor: focused ? "#6200EA" : "#6200ea25",
-                resizeMode: "contain", // Görsel orantılı daralsın
-                alignSelf: "center", // Yatay ortala
+                width: 24,
+                height: 24,
+                tintColor: focused ? "#6200EA" : "#757575",
+                resizeMode: "contain",
               }}
             />
           ),

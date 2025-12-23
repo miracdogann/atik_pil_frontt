@@ -1,25 +1,22 @@
-// PilTeslimNoktalari.jsx (Haritadan Yönlendirmeyi Alır, Kayar ve VURGULAR)
+import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   FlatList,
   Linking,
   Platform,
   RefreshControl,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native";
 import {
   ActivityIndicator,
-  Button,
-  Card,
   Divider,
-  FAB,
   PaperProvider,
-  Portal,
-  ProgressBar,
   Searchbar,
   Text,
   useTheme,
@@ -28,7 +25,7 @@ import { useDebounce } from "use-debounce";
 import Header from "../../components/Header";
 import { getPoints } from "../../services/api";
 
-// --- 1. Yardımcı Fonksiyonlar (Değişiklik yok) ---
+// --- 1. Yardımcı Fonksiyonlar ---
 const calculateDistance = (userLoc, pointLoc) => {
   if (!userLoc || !pointLoc || !pointLoc.lat || !pointLoc.lng) return null;
   const R = 6371;
@@ -44,10 +41,12 @@ const calculateDistance = (userLoc, pointLoc) => {
   return Math.round(R * c * 10) / 10;
 };
 
-const getOccupancyColor = (occupancy) => {
-  if (occupancy < 30) return "#4CAF50";
-  if (occupancy < 70) return "#FF9800";
-  return "#F44336";
+const getOccupancyInfo = (occupancy) => {
+  if (occupancy < 30)
+    return { color: ["#10b981", "#059669"], label: "Uygun", icon: "✅" };
+  if (occupancy < 70)
+    return { color: ["#f59e0b", "#d97706"], label: "Orta", icon: "⚠️" };
+  return { color: ["#ef4444", "#dc2626"], label: "Dolu", icon: "🚫" };
 };
 
 const openMap = (latitude, longitude, name) => {
@@ -69,54 +68,103 @@ const openMap = (latitude, longitude, name) => {
   });
 };
 
-// --- 2. Yardımcı Durum Component'leri (Değişiklik yok) ---
+// --- 2. Yardımcı Durum Component'leri ---
 const LoadingComponent = () => (
-  <View style={styles.centered}>
-    <ActivityIndicator size="large" />
-    <Text style={styles.loadingText}>Noktalar yükleniyor...</Text>
-  </View>
+  <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.centered}>
+    <View style={styles.loadingCard}>
+      <Text style={styles.loadingIcon}>🔋</Text>
+      <ActivityIndicator size="large" color="#667eea" style={styles.spinner} />
+      <Text style={styles.loadingTitle}>Teslim Noktaları Yükleniyor</Text>
+      <Text style={styles.loadingSubtitle}>
+        Size en yakın noktalar bulunuyor...
+      </Text>
+    </View>
+  </LinearGradient>
 );
 
 const ErrorComponent = ({ message, onRetry }) => (
-  <View style={styles.centered}>
-    <Text style={styles.errorText}>Hata: {message}</Text>
-    <Button mode="outlined" onPress={onRetry}>
-      Yeniden Dene
-    </Button>
-  </View>
+  <LinearGradient colors={["#f093fb", "#f5576c"]} style={styles.centered}>
+    <View style={styles.errorCard}>
+      <Text style={styles.errorIcon}>⚠️</Text>
+      <Text style={styles.errorTitle}>Bağlantı Hatası</Text>
+      <Text style={styles.errorMessage}>{message}</Text>
+      <TouchableOpacity
+        style={styles.retryButton}
+        onPress={onRetry}
+        activeOpacity={0.8}
+      >
+        <LinearGradient
+          colors={["#667eea", "#764ba2"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.retryButtonGradient}
+        >
+          <Text style={styles.retryButtonText}>🔄 Yeniden Dene</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  </LinearGradient>
 );
 
 const EmptyComponent = ({ onRetry }) => (
-  <View style={styles.centered}>
-    <Text style={styles.emptyText}>Teslim noktası bulunamadı.</Text>
-    <Text style={styles.emptySubText}>
-      Arama kriterlerinizi değiştirin veya daha sonra tekrar deneyin.
+  <View style={styles.emptyContainer}>
+    <Text style={styles.emptyIcon}>📭</Text>
+    <Text style={styles.emptyTitle}>Nokta Bulunamadı</Text>
+    <Text style={styles.emptySubtitle}>
+      Arama kriterlerinizi değiştirin veya yeniden deneyin.
     </Text>
-    <Button mode="outlined" onPress={onRetry}>
-      Yenile
-    </Button>
+    <TouchableOpacity
+      style={styles.emptyButton}
+      onPress={onRetry}
+      activeOpacity={0.8}
+    >
+      <LinearGradient
+        colors={["#667eea", "#764ba2"]}
+        style={styles.emptyButtonGradient}
+      >
+        <Text style={styles.emptyButtonText}>🔄 Yenile</Text>
+      </LinearGradient>
+    </TouchableOpacity>
   </View>
 );
 
 const LocationPermissionBanner = ({ onGrant }) => (
-  <View style={styles.banner}>
-    <Text style={styles.bannerText}>
-      Size en yakın noktaları göstermek için konum izni gerekli.
-    </Text>
-    <Button mode="text" onPress={onGrant}>
-      İzin Ver
-    </Button>
+  <View style={styles.permissionBanner}>
+    <LinearGradient
+      colors={["#fbbf24", "#f59e0b"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.permissionBannerGradient}
+    >
+      <View style={styles.permissionContent}>
+        <Text style={styles.permissionIcon}>📍</Text>
+        <View style={styles.permissionTextContainer}>
+          <Text style={styles.permissionTitle}>Konum İzni Gerekli</Text>
+          <Text style={styles.permissionText}>
+            En yakın noktaları göstermek için konum izni verin
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={onGrant}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.permissionButtonText}>İzin Ver</Text>
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
   </View>
 );
 
-// --- 3. Kart Component'i (!!! DEĞİŞİKLİK BURADA !!!) ---
-// Artık 'highlightedId' prop'unu alıyor
-const PointCard = memo(({ item, highlightedId }) => {
+// --- 3. Kart Component'i ---
+const PointCard = memo(({ item, highlightedId, index, cardAnims }) => {
   const router = useRouter();
-
-  // Kendi ID'si ile haritadan gelen ID'yi karşılaştır
   const isHighlighted =
     (item.id || item.kurum_id).toString() === (highlightedId || "").toString();
+
+  if (!cardAnims[index]) {
+    cardAnims[index] = new Animated.Value(1);
+  }
 
   const handleNavigate = () => {
     router.push({
@@ -129,88 +177,151 @@ const PointCard = memo(({ item, highlightedId }) => {
     openMap(item.latitude, item.longitude, item.kurum_name);
   };
 
-  const occupancy = item.occupancy;
-  const progress = Math.min(Math.max(occupancy || 0, 0) / 100, 1);
+  const occupancy = item.occupancy || 0;
+  const occupancyInfo = getOccupancyInfo(occupancy);
 
   return (
-    // <-- DEĞİŞİKLİK: Vurgu stili eklendi
-    <Card
-      style={[styles.card, isHighlighted && styles.highlightedCard]}
-      mode="elevated"
-      elevation={isHighlighted ? 8 : 2} // Vurgulu karta daha fazla gölge ver
-      onPress={handleNavigate}
+    <Animated.View
+      style={[
+        styles.cardWrapper,
+        {
+          opacity: cardAnims[index],
+          transform: [
+            {
+              translateY: cardAnims[index].interpolate({
+                inputRange: [0, 1],
+                outputRange: [30, 0],
+              }),
+            },
+          ],
+        },
+      ]}
     >
-      <Card.Title
-        title={item.kurum_name}
-        titleNumberOfLines={2}
-        titleStyle={styles.cardTitle}
-        subtitle={item.city ? `${item.city}, ${item.district || ""}` : null}
-        subtitleNumberOfLines={1}
-        left={(props) => (
-          <Text {...props} style={styles.cardIcon}>
-            🔋
-          </Text>
-        )}
-        right={(props) =>
-          item.distance != null ? (
-            <Text {...props} style={styles.cardDistance}>
-              {item.distance} km
-            </Text>
-          ) : null
-        }
-      />
-      <Card.Content>
-        <Text
-          variant="bodyMedium"
-          style={styles.cardDescription}
-          numberOfLines={2}
-        >
-          {item.kurum_adress}
-        </Text>
-        {item.kurum_telefon && (
-          <Text variant="bodySmall" style={styles.cardDescription}>
-            Tel: {item.kurum_telefon}
-          </Text>
-        )}
-        {occupancy != null && occupancy > 0 && (
-          <View style={styles.occupancyContainer}>
-            <Text variant="bodySmall" style={styles.occupancyText}>
-              Doluluk: %{occupancy}
-            </Text>
-            <ProgressBar
-              progress={progress}
-              color={getOccupancyColor(occupancy)}
-              style={styles.progressBar}
-            />
+      <TouchableOpacity activeOpacity={0.95} onPress={handleNavigate}>
+        <View style={[styles.card, isHighlighted && styles.highlightedCard]}>
+          {isHighlighted && (
+            <View style={styles.highlightBadge}>
+              <Text style={styles.highlightBadgeText}>📍 Seçili</Text>
+            </View>
+          )}
+
+          {/* Card Header */}
+          <View style={styles.cardHeader}>
+            <View style={styles.iconContainer}>
+              <LinearGradient
+                colors={["#667eea", "#764ba2"]}
+                style={styles.iconGradient}
+              >
+                <Text style={styles.cardIcon}>🔋</Text>
+              </LinearGradient>
+            </View>
+
+            <View style={styles.headerContent}>
+              <Text style={styles.cardTitle} numberOfLines={2}>
+                {item.kurum_name}
+              </Text>
+              {item.city && (
+                <Text style={styles.cardSubtitle} numberOfLines={1}>
+                  📍 {item.city}, {item.district || ""}
+                </Text>
+              )}
+            </View>
+
+            {item.distance != null && (
+              <View style={styles.distanceBadge}>
+                <Text style={styles.distanceText}>{item.distance}</Text>
+                <Text style={styles.distanceUnit}>km</Text>
+              </View>
+            )}
           </View>
-        )}
-      </Card.Content>
-      <Card.Actions>
-        <Button
-          mode="outlined"
-          onPress={handleOpenMap}
-          icon="map-marker-outline"
-          style={styles.actionButton}
-        >
-          Yol Tarifi
-        </Button>
-        <Button
-          mode="contained"
-          onPress={handleNavigate}
-          icon="battery-arrow-down"
-          style={styles.actionButton}
-        >
-          Teslim Et
-        </Button>
-      </Card.Actions>
-    </Card>
+
+          <Divider style={styles.cardDivider} />
+
+          {/* Card Body */}
+          <View style={styles.cardBody}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoIcon}>📍</Text>
+              <Text style={styles.infoText} numberOfLines={2}>
+                {item.kurum_adress}
+              </Text>
+            </View>
+
+            {item.kurum_telefon && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoIcon}>📞</Text>
+                <Text style={styles.infoText}>{item.kurum_telefon}</Text>
+              </View>
+            )}
+
+            {occupancy > 0 && (
+              <View style={styles.occupancySection}>
+                <LinearGradient
+                  colors={occupancyInfo.color}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.occupancyBadge}
+                >
+                  <Text style={styles.occupancyIcon}>{occupancyInfo.icon}</Text>
+                  <Text style={styles.occupancyLabel}>
+                    {occupancyInfo.label}
+                  </Text>
+                  <Text style={styles.occupancyValue}>%{occupancy}</Text>
+                </LinearGradient>
+
+                <View style={styles.progressBarContainer}>
+                  <View style={styles.progressBarBg}>
+                    <LinearGradient
+                      colors={occupancyInfo.color}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[
+                        styles.progressBarFill,
+                        { width: `${occupancy}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Card Actions */}
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleOpenMap}
+              activeOpacity={0.8}
+            >
+              <View style={styles.actionButtonOutline}>
+                <Text style={styles.actionButtonIcon}>🗺️</Text>
+                <Text style={styles.actionButtonTextOutline}>Yol Tarifi</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleNavigate}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={["#667eea", "#764ba2"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.actionButtonGradient}
+              >
+                <Text style={styles.actionButtonIcon}>🔋</Text>
+                <Text style={styles.actionButtonTextFilled}>Teslim Et</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 });
 
-// --- 4. Ana Component (!!! DEĞİŞİKLİK BURADA !!!) ---
-
+// --- 4. Ana Component ---
 const PilTeslimNoktalari = () => {
-  // --- State'ler ---
   const [points, setPoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -220,17 +331,17 @@ const PilTeslimNoktalari = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [fabOpen, setFabOpen] = useState(false);
 
-  // --- ID'yi Almak ve Kaydırmak için State'ler ---
   const flatListRef = useRef(null);
   const params = useLocalSearchParams();
   const navigatedPointId = params.pointId;
   const [scrolledToItem, setScrolledToItem] = useState(false);
+  const cardAnims = useRef([]).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const [debouncedSearchQuery] = useDebounce(searchQuery, 300);
   const theme = useTheme();
   const router = useRouter();
 
-  // --- Fonksiyonlar ---
   const requestLocationPermission = useCallback(async () => {
     setLocationError(null);
     try {
@@ -282,6 +393,25 @@ const PilTeslimNoktalari = () => {
           );
         }
         setPoints(data);
+
+        // Animasyonlar
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }).start();
+
+        data.forEach((_, index) => {
+          if (!cardAnims[index]) {
+            cardAnims[index] = new Animated.Value(0);
+          }
+          Animated.timing(cardAnims[index], {
+            toValue: 1,
+            duration: 400,
+            delay: index * 60,
+            useNativeDriver: true,
+          }).start();
+        });
       } catch (err) {
         setError("Noktalar yüklenemedi. İnternet bağlantınızı kontrol edin.");
         console.error("Pil Teslim Noktaları hatası:", err);
@@ -293,24 +423,20 @@ const PilTeslimNoktalari = () => {
     [userLocation, refreshing]
   );
 
-  // İlk Yükleme
   useEffect(() => {
     const loadData = async () => {
       const newLocation = await requestLocationPermission();
       await fetchPoints(newLocation);
     };
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Yenileme
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     const newLocation = await requestLocationPermission();
     await fetchPoints(newLocation);
   }, [requestLocationPermission, fetchPoints]);
 
-  // Filtrelenmiş Noktalar
   const filteredPoints = useMemo(() => {
     let filtered = points;
     if (debouncedSearchQuery) {
@@ -328,26 +454,20 @@ const PilTeslimNoktalari = () => {
     return filtered;
   }, [points, debouncedSearchQuery, userLocation]);
 
-  // --- Karta Kaydırma Efekti (!!! GÜNCELLENDİ !!!) ---
-
-  // <-- DEĞİŞİKLİK: Bu 'useEffect', haritadan yeni bir ID geldiğinde
-  // kaydırma kilidini ('scrolledToItem') açar. Bu, art arda
-  // farklı noktalara tıklamanın çalışmasını sağlar.
   useEffect(() => {
     if (navigatedPointId) {
-      setScrolledToItem(false); // Yeni ID geldi, kaydırmaya izin ver
+      setScrolledToItem(false);
     }
   }, [navigatedPointId]);
 
-  // Bu 'useEffect' asıl kaydırma işlemini yapar
   useEffect(() => {
     if (
-      !navigatedPointId || // Kaydırılacak ID yoksa
-      scrolledToItem || // Zaten kaydırılmışsa
-      loading || // Veri henüz yükleniyorsa
-      filteredPoints.length === 0 // Liste boşsa
+      !navigatedPointId ||
+      scrolledToItem ||
+      loading ||
+      filteredPoints.length === 0
     ) {
-      return; // İşlem yapma
+      return;
     }
 
     const targetIndex = filteredPoints.findIndex(
@@ -361,21 +481,24 @@ const PilTeslimNoktalari = () => {
           flatListRef.current.scrollToIndex({
             index: targetIndex,
             animated: true,
-            viewPosition: 0.5, // 0.5 = Kartı ekranın ortasına getir
+            viewPosition: 0.5,
           });
-          setScrolledToItem(true); // "Kaydırma yapıldı" olarak işaretle
+          setScrolledToItem(true);
         }
       }, 300);
     }
   }, [filteredPoints, loading, navigatedPointId, scrolledToItem]);
-  // --- Kaydırma Efekti Sonu ---
 
-  // --- Render Fonksiyonları (FlatList için) ---
-
-  // <-- DEĞİŞİKLİK: 'renderItem' artık 'highlightedId' prop'unu kartlara aktarıyor
   const renderItem = useCallback(
-    ({ item }) => <PointCard item={item} highlightedId={navigatedPointId} />,
-    [navigatedPointId] // 'navigatedPointId' değiştiğinde 'renderItem'ı güncelle
+    ({ item, index }) => (
+      <PointCard
+        item={item}
+        highlightedId={navigatedPointId}
+        index={index}
+        cardAnims={cardAnims}
+      />
+    ),
+    [navigatedPointId, cardAnims]
   );
 
   const keyExtractor = useCallback(
@@ -383,7 +506,6 @@ const PilTeslimNoktalari = () => {
     []
   );
 
-  // 'En Yakın' FAB Tıklaması
   const handleFabPress = () => {
     const nearestPoint = filteredPoints[0];
     if (nearestPoint) {
@@ -395,7 +517,6 @@ const PilTeslimNoktalari = () => {
     }
   };
 
-  // --- Render Durumları ---
   if (loading && points.length === 0) {
     return <LoadingComponent />;
   }
@@ -404,215 +525,347 @@ const PilTeslimNoktalari = () => {
     return <ErrorComponent message={error} onRetry={handleRefresh} />;
   }
 
-  // --- Ana Render ---
   return (
     <PaperProvider>
-      <View
-        style={[styles.container, { backgroundColor: theme.colors.background }]}
-      >
+      <View style={styles.container}>
         <Header />
-        <Divider style={styles.divider} />
 
-        <Text
-          variant="headlineSmall"
-          style={styles.headerText}
-          accessibilityRole="header"
+        {/* Title Section */}
+        <LinearGradient
+          colors={["#667eea", "#764ba2"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.titleSection}
         >
-          Pil Teslim Noktaları
-        </Text>
+          <Text style={styles.titleText}>🔋 Pil Teslim Noktaları</Text>
+          <Text style={styles.subtitleText}>
+            {filteredPoints.length} nokta bulundu
+          </Text>
+        </LinearGradient>
 
-        <Searchbar
-          placeholder="Nokta, adres veya şehir ara..."
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={styles.searchbar}
-          icon="magnify"
-        />
-
-        <FlatList
-          ref={flatListRef}
-          data={filteredPoints}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem} // <-- Güncellenmiş 'renderItem'
-          contentContainerStyle={styles.flatList}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          windowSize={10}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              colors={[theme.colors.primary]}
-            />
-          }
-          ListHeaderComponent={
-            locationError && !userLocation ? (
-              <LocationPermissionBanner onGrant={requestLocationPermission} />
-            ) : null
-          }
-          ListEmptyComponent={
-            !loading ? <EmptyComponent onRetry={handleRefresh} /> : null
-          }
-        />
-
-        {/* FAB.Group */}
-        <Portal>
-          <FAB.Group
-            open={fabOpen}
-            visible={true}
-            icon={fabOpen ? "close" : "layers-outline"}
-            color="#fff"
-            fabStyle={[styles.fab, { backgroundColor: theme.colors.primary }]}
-            actions={[
-              {
-                icon: "map",
-                label: "Haritada Göster",
-                onPress: () => router.navigate("/(tabs)/LoadMap"),
-                style: styles.fabAction,
-                color: "#0D1521",
-                labelTextColor: "#0D1521",
-                size: "small",
-              },
-              {
-                icon: "navigation-variant",
-                label: "En Yakın",
-                onPress: handleFabPress,
-                style: styles.fabAction,
-                color: "#0D1521",
-                labelTextColor: "#0D1521",
-                size: "small",
-              },
-            ]}
-            onStateChange={({ open }) => setFabOpen(open)}
+        <View style={styles.searchContainer}>
+          <Searchbar
+            placeholder="Adres veya şehir ara..."
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={styles.searchbar}
+            iconColor="#667eea"
+            inputStyle={styles.searchInput}
           />
-        </Portal>
+        </View>
+
+        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+          <FlatList
+            ref={flatListRef}
+            data={filteredPoints}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            contentContainerStyle={styles.flatList}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={10}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={["#667eea"]}
+                tintColor="#667eea"
+              />
+            }
+            ListHeaderComponent={
+              locationError && !userLocation ? (
+                <LocationPermissionBanner onGrant={requestLocationPermission} />
+              ) : null
+            }
+            ListEmptyComponent={
+              !loading ? <EmptyComponent onRetry={handleRefresh} /> : null
+            }
+          />
+        </Animated.View>
+
+        {/* FAB Buttons */}
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            style={styles.fabButton}
+            onPress={() => router.navigate("/(tabs)/Map")}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#667eea", "#764ba2"]}
+              style={styles.fabGradient}
+            >
+              <Text style={styles.fabIcon}>🗺️</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
     </PaperProvider>
   );
 };
 
-// --- 5. Stiller (!!! DEĞİŞİKLİK BURADA !!!) ---
-
+// --- 5. Stiller ---
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: "#f8f9fa" },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#f5f5f5",
   },
-  loadingText: {
-    marginTop: 10,
-    color: "#666",
-    textAlign: "center",
-    fontSize: 16,
-  },
-  headerText: {
-    paddingHorizontal: 16,
-    marginVertical: 12,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  divider: { height: 1 },
-  searchbar: { marginHorizontal: 12, marginBottom: 8, elevation: 1 },
-  flatList: { paddingBottom: 80 },
-  emptyText: {
-    fontSize: 18,
-    color: "#666",
-    marginBottom: 10,
-    textAlign: "center",
-    fontWeight: "500",
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: "#999",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  errorText: {
-    textAlign: "center",
-    color: "#d32f2f",
-    marginBottom: 15,
-    fontSize: 16,
-  },
-  fab: {
-    position: "absolute",
-    margin: 16,
-    right: 0,
-    bottom: 0,
-  },
-  fabAction: {
-    backgroundColor: "white",
-  },
-  banner: {
-    backgroundColor: "#fff8e1",
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    margin: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ffe57f",
-  },
-  bannerText: {
-    flex: 1,
-    color: "#6d4c41",
-  },
-  card: {
-    marginVertical: 8,
-    marginHorizontal: 12,
-    borderRadius: 12,
+  loadingCard: {
     backgroundColor: "#fff",
-    borderWidth: 2, // Vurgu için yer hazırla
-    borderColor: "transparent", // Normalde görünmez
+    borderRadius: 30,
+    padding: 40,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
   },
-  // <-- DEĞİŞİKLİK: Vurgulanan kart için yeni stil
-  highlightedCard: {
-    borderColor: "#6200ee", // Ana tema renginiz (veya dilediğiniz bir renk)
-    borderWidth: 2,
-    transform: [{ scale: 1.01 }], // Hafif büyüt
+  loadingIcon: { fontSize: 80, marginBottom: 20 },
+  spinner: { marginVertical: 15 },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#2d3748",
+    marginTop: 10,
   },
-  cardIcon: {
-    fontSize: 28,
-    marginLeft: 8,
-  },
-  cardTitle: {
-    fontWeight: "bold",
-    fontSize: 17,
-    lineHeight: 22,
-  },
-  cardDistance: {
+  loadingSubtitle: {
     fontSize: 15,
-    fontWeight: "bold",
-    color: "#6200ee",
-    marginRight: 16,
+    color: "#718096",
+    marginTop: 8,
+    textAlign: "center",
   },
-  cardDescription: {
-    color: "#444",
+  errorCard: {
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    padding: 40,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+    width: "90%",
+  },
+  errorIcon: { fontSize: 80, marginBottom: 20 },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#2d3748",
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: "#718096",
+    textAlign: "center",
+    marginBottom: 30,
+  },
+  retryButton: { borderRadius: 20, overflow: "hidden" },
+  retryButtonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    alignItems: "center",
+  },
+  retryButtonText: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  titleSection: {
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  titleText: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#fff",
+    textAlign: "center",
+  },
+  subtitleText: {
+    fontSize: 15,
+    color: "rgba(255,255,255,0.9)",
+    textAlign: "center",
+    marginTop: 6,
+  },
+  searchContainer: { paddingHorizontal: 16, paddingVertical: 12 },
+  searchbar: { backgroundColor: "#fff", borderRadius: 20, elevation: 4 },
+  searchInput: { fontSize: 15 },
+  flatList: { paddingBottom: 100 },
+  permissionBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  permissionBannerGradient: { padding: 16 },
+  permissionContent: { flexDirection: "row", alignItems: "center" },
+  permissionIcon: { fontSize: 32, marginRight: 12 },
+  permissionTextContainer: { flex: 1 },
+  permissionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#fff",
     marginBottom: 4,
   },
-  occupancyContainer: {
+  permissionText: { fontSize: 13, color: "rgba(255,255,255,0.9)" },
+  permissionButton: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  permissionButtonText: { fontSize: 14, fontWeight: "700", color: "#f59e0b" },
+  cardWrapper: { marginHorizontal: 16, marginVertical: 8 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  highlightedCard: {
+    borderWidth: 3,
+    borderColor: "#667eea",
+    shadowOpacity: 0.25,
+    elevation: 10,
+  },
+  highlightBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "#667eea",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    zIndex: 10,
+  },
+  highlightBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  cardHeader: { flexDirection: "row", alignItems: "center", padding: 16 },
+  iconContainer: { marginRight: 12 },
+  iconGradient: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cardIcon: { fontSize: 28 },
+  headerContent: { flex: 1 },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1f2937",
+    marginBottom: 4,
+  },
+  cardSubtitle: { fontSize: 13, color: "#6b7280" },
+  distanceBadge: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  distanceText: { fontSize: 20, fontWeight: "800", color: "#3b82f6" },
+  distanceUnit: { fontSize: 11, fontWeight: "600", color: "#3b82f6" },
+  cardDivider: { height: 1, backgroundColor: "#e5e7eb" },
+  cardBody: { padding: 16 },
+  infoRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 8 },
+  infoIcon: { fontSize: 18, marginRight: 8, marginTop: 2 },
+  infoText: { flex: 1, fontSize: 14, color: "#4b5563", lineHeight: 20 },
+  occupancySection: { marginTop: 12 },
+  occupancyBadge: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    alignSelf: "flex-start",
   },
-  occupancyText: {
-    fontSize: 13,
-    color: "#666",
+  occupancyIcon: { fontSize: 16, marginRight: 6 },
+  occupancyLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
     marginRight: 8,
   },
-  progressBar: {
-    flex: 1,
+  occupancyValue: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  progressBarContainer: { marginTop: 8 },
+  progressBarBg: {
     height: 8,
+    backgroundColor: "#e5e7eb",
     borderRadius: 4,
+    overflow: "hidden",
   },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 4,
+  progressBarFill: { height: "100%", borderRadius: 4 },
+  cardActions: { flexDirection: "row", padding: 12, gap: 8 },
+  actionButton: { flex: 1, borderRadius: 12, overflow: "hidden" },
+  actionButtonOutline: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: "#667eea",
+    borderRadius: 12,
   },
+  actionButtonIcon: { fontSize: 18, marginRight: 6 },
+  actionButtonTextOutline: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#667eea",
+  },
+  actionButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+  },
+  actionButtonTextFilled: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  emptyContainer: { alignItems: "center", paddingVertical: 60 },
+  emptyIcon: { fontSize: 80, marginBottom: 20 },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#2d3748",
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    color: "#718096",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  emptyButton: { borderRadius: 16, overflow: "hidden" },
+  emptyButtonGradient: { paddingVertical: 14, paddingHorizontal: 32 },
+  emptyButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  fabContainer: { position: "absolute", bottom: 120, right: 20, gap: 12 },
+  fabButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    hadowRadius: 8,
+    elevation: 8,
+  },
+  fabGradient: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fabIcon: { fontSize: 28 },
 });
 
 export default PilTeslimNoktalari;

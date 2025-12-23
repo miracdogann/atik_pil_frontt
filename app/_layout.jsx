@@ -1,6 +1,7 @@
-import ErrorBoundary from "@/components/ErrorBoundary"; // <-- EKLE: Import
-import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { Stack } from "expo-router";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import { AuthProvider, useAuth } from "@/context/AuthContext"; // Path düzelt: context mi AuthContext?
+import { Stack, useRouter } from "expo-router"; // useRouter'ı EKLE
+import { useEffect } from "react"; // useEffect'i EKLE
 import { Text, View } from "react-native";
 import { PaperProvider } from "react-native-paper";
 import Toast from "react-native-toast-message";
@@ -70,7 +71,15 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
-  const { isLoading } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
+  const router = useRouter(); // EKLE
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      console.log("Not authenticated – Redirect to Login");
+      router.replace("/(auth)/Login");
+    }
+  }, [isAuthenticated, isLoading, router]); // Dependency'leri ekle
 
   if (isLoading) {
     return (
@@ -78,6 +87,11 @@ function RootNavigator() {
         <Text>Yükleniyor...</Text>
       </View>
     );
+  }
+
+  // Ek: Authenticated ise tabs'e force git (opsiyonel, index route handle etsin)
+  if (isAuthenticated && router.pathname?.startsWith("/(auth)")) {
+    router.replace("/(tabs)/index");
   }
 
   return (

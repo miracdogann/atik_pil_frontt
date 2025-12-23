@@ -36,7 +36,7 @@ const restoreSession = async () => {
       const userData = await fetchUser();  // Bu, interceptor'ı tetikleyebilir (expired access için refresh)
       setUser({ ...userData, token: accessToken });
     } catch (error) {
-      console.error("Restore user fetch error:", error);  // Production'da Sentry gibi tool'a loglayın
+      // console.error("Restore user fetch error:", error);  // Production'da Sentry gibi tool'a loglayın
       // CRITICAL: Hata durumunda (refresh fail dahil) token'ları temizle ve logout
       await SecureStore.deleteItemAsync("accessToken");
       await SecureStore.deleteItemAsync("refreshToken");
@@ -86,10 +86,29 @@ const restoreSession = async () => {
   const updateUser = (userData) => {
     setUser({ ...userData, token: user?.token });
   };
+  const loadUser = async () => {
+    if (!isAuthenticated) return;  // Erken çık
+    try {
+      const userData = await fetchUser();
+      setUser({ ...userData, token: user?.token });
+      console.log("User loaded successfully");
+    } catch (error) {
+      // console.error("Load user error:", error);
+      // 401 veya AUTH_EXPIRED ise auto-logout
+      if (error.code === "AUTH_EXPIRED" || error.response?.status === 401) {
+        console.log("Tokens expired – Auto logout");
+        await logout();
+      } else {
+        // Diğer hatalarda toast göster (opsiyonel)
+        // Toast.show({ type: 'error', text1: 'Kullanıcı yüklenemedi' });
+        throw error;
+      }
+    }
+  };
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated, isLoading, login, register, logout, updateUser }}
+      value={{ user, isAuthenticated, isLoading, login, register, logout, updateUser,loadUser }}
     >
       {children}
     </AuthContext.Provider>

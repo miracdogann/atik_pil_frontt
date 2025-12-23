@@ -20,7 +20,6 @@ const Profile = () => {
   const [loading, setLoading] = useState(true); // Loading for initial/fetch
   const [refreshing, setRefreshing] = useState(false); // Separate for pull-to-refresh
 
-  // Koruma: Auth yoksa login'e redirect
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace("/(auth)/Login");
@@ -67,9 +66,11 @@ const Profile = () => {
   const onRefresh = useCallback(async () => {
     if (isAuthenticated && user?.token) {
       setRefreshing(true);
+      console.log(user);
       try {
         const userData = await fetchUser();
         updateUser(userData);
+        // console.log("user data profil page", userData);
         Toast.show({
           type: "success",
           text1: "Profil yenilendi",
@@ -121,6 +122,7 @@ const Profile = () => {
           {user.e_posta || "E-posta Yükleniyor..."}
         </Text>
         <Text style={styles.points}>Puan: {user.point || 0}</Text>
+        {/* <Text>{user.role}</Text> */}
       </View>
 
       <Divider />
@@ -135,20 +137,24 @@ const Profile = () => {
             colors={["#6200ee"]}
             tintColor="#6200ee"
           />
-        } // <-- EKLE: Pull-to-refresh
+        }
       >
-        <List.Item
-          title="Kişisel Bilgileri Düzenle"
-          description="Ad Soyad, Telefon, E-posta, Şifre..."
-          left={(props) => (
-            <List.Icon
-              {...props}
-              icon={require("../../assets/icons/notebook-of-contacts.png")}
-              color="#6200ee"
-            />
-          )}
-        />
-        <Divider />
+        <TouchableOpacity
+          onPress={() => router.navigate("/screens/EditProfil")}
+        >
+          <List.Item
+            title="Kişisel Bilgileri Düzenle"
+            description="Ad Soyad, Telefon, E-posta, Şifre..."
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={require("../../assets/icons/notebook-of-contacts.png")}
+                color="#6200ee"
+              />
+            )}
+          />
+          <Divider />
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={() => router.navigate("/PilTeslim/PilTeslimlerim")}
@@ -166,20 +172,54 @@ const Profile = () => {
             )}
           />
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.navigate("/PilTeslim/PilAnalizi")}
+        >
+          <List.Item
+            on
+            title="Pil Analizi"
+            description="Yapılan işlemler ve son durumları"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={require("../../assets/icons/battery.png")}
+                color="#6200ee"
+              />
+            )}
+          />
+        </TouchableOpacity>
         <Divider />
-
-        <List.Item
-          title="Topluluk Sıralaması"
-          description="En çok pil toplayan kullanıcılarımız"
-          left={(props) => (
-            <List.Icon
-              {...props}
-              icon={require("../../assets/icons/analitik.png")}
-              color="#6200ee"
-            />
-          )}
-        />
+        <TouchableOpacity onPress={() => router.navigate("/screens/MyOrder")}>
+          <List.Item
+            on
+            title="Siparişlerim"
+            description="Verilen siparişler ve son durumları"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={require("../../assets/icons/order_status.png")}
+                color="#6200ee"
+              />
+            )}
+          />
+        </TouchableOpacity>
         <Divider />
+        <TouchableOpacity
+          onPress={() => router.navigate("/screens/CommunityRank")}
+        >
+          <List.Item
+            title="Topluluk Sıralaması"
+            description="En çok pil toplayan kullanıcılarımız"
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={require("../../assets/icons/analitik.png")}
+                color="#6200ee"
+              />
+            )}
+          />
+          <Divider />
+        </TouchableOpacity>
 
         <List.Item
           title="ReycAI İletişim"

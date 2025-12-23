@@ -1,6 +1,6 @@
-// Map.jsx (Değişiklik Gerekmiyor - Zaten Doğru Gönderiyor)
 import { getPoints } from "@/services/api";
 import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import React, {
@@ -13,22 +13,18 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Image,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
-import {
-  Button,
-  FAB,
-  Icon,
-  Provider as PaperProvider,
-  Portal,
-} from "react-native-paper";
+import { Provider as PaperProvider } from "react-native-paper";
 import { WebView } from "react-native-webview";
 
-const { height } = Dimensions.get("window");
+const { height, width } = Dimensions.get("window");
 
 const boxIconAsset = Image.resolveAssetSource(
   require("@/assets/icons/battery-2.png")
@@ -45,11 +41,29 @@ const Map = () => {
   const [fabOpen, setFabOpen] = useState(false);
   const [isWebViewLoading, setIsWebViewLoading] = useState(false);
   const webViewRef = useRef(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   const DEFAULT_API_KEY = "vxNgHq8W1x8soPbMdhwWqgyDrT6ZVMXf";
   const DEFAULT_LATITUDE = 38.6191;
   const DEFAULT_LONGITUDE = 27.4222;
   const DEFAULT_ZOOM = 13;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   // 1. Konum alma
   const getUserLocation = async () => {
@@ -140,14 +154,14 @@ const Map = () => {
       }));
   }, [pointsData]);
 
-  // 5. Marker tıklama handler'ı (YÖNLENDİRME BURADA)
+  // 5. Marker tıklama handler'ı
   const handleMarkerClick = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === "loadClick") {
         router.push({
-          pathname: "/(tabs)/PilTeslimNoktalari", // Liste sayfasının yolu
-          params: { pointId: data.id.toString() }, // Tıklanan noktanın ID'sini gönder
+          pathname: "/(tabs)/PilTeslimNoktalari",
+          params: { pointId: data.id.toString() },
         });
       }
     } catch (error) {
@@ -160,6 +174,7 @@ const Map = () => {
     if (webViewRef.current && userLocation) {
       const script = `map.flyTo({ center: [${userLocation.longitude}, ${userLocation.latitude}], zoom: 14, speed: 1.5 });`;
       webViewRef.current.injectJavaScript(script);
+      setFabOpen(false);
     }
   };
 
@@ -271,30 +286,71 @@ const Map = () => {
   // 9. Yükleme durumu
   if (isLoadingLocation || (isLoadingPoints && pointsData.length === 0)) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#0D1521" />
-        <Text style={styles.loadingText}>Harita yükleniyor...</Text>
-      </View>
+      <LinearGradient
+        colors={["#667eea", "#764ba2"]}
+        style={styles.centerContainer}
+      >
+        <Animated.View
+          style={[
+            styles.loadingCard,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }],
+            },
+          ]}
+        >
+          <View style={styles.loadingIconContainer}>
+            <Text style={styles.loadingIcon}>🗺️</Text>
+          </View>
+          <ActivityIndicator
+            size="large"
+            color="#667eea"
+            style={styles.spinner}
+          />
+          <Text style={styles.loadingTitle}>Harita Hazırlanıyor</Text>
+          <Text style={styles.loadingSubtitle}>
+            Konumunuz ve teslim noktaları yükleniyor...
+          </Text>
+        </Animated.View>
+      </LinearGradient>
     );
   }
 
   // 10. Hata durumu
   if (isErrorPoints) {
     return (
-      <View style={styles.centerContainer}>
-        <Icon source="cloud-off-outline" size={60} color="#D32F2F" />
-        <Text style={styles.errorText}>Noktalar getirilemedi.</Text>
-        <Text style={styles.errorSubText}>{isErrorPoints}</Text>
-        <Button
-          onPress={fetchPoints}
-          mode="contained"
-          buttonColor="#0D1521"
-          textColor="#fff"
-          style={{ marginTop: 10 }}
+      <LinearGradient
+        colors={["#f093fb", "#f5576c"]}
+        style={styles.centerContainer}
+      >
+        <Animated.View
+          style={[
+            styles.errorCard,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }],
+            },
+          ]}
         >
-          Yeniden Dene
-        </Button>
-      </View>
+          <Text style={styles.errorIcon}>⚠️</Text>
+          <Text style={styles.errorTitle}>Bağlantı Hatası</Text>
+          <Text style={styles.errorMessage}>{isErrorPoints}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={fetchPoints}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#667eea", "#764ba2"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.retryButtonGradient}
+            >
+              <Text style={styles.retryButtonText}>🔄 Yeniden Dene</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+      </LinearGradient>
     );
   }
 
@@ -302,6 +358,19 @@ const Map = () => {
   return (
     <PaperProvider>
       <View style={styles.container}>
+        {/* Info Badge */}
+        <View style={styles.infoBadge}>
+          <LinearGradient
+            colors={["rgba(255,255,255,0.95)", "rgba(255,255,255,0.9)"]}
+            style={styles.infoBadgeGradient}
+          >
+            <Text style={styles.infoBadgeIcon}>📍</Text>
+            <Text style={styles.infoBadgeText}>
+              {mapMarkers.length} Teslim Noktası
+            </Text>
+          </LinearGradient>
+        </View>
+
         {htmlContent && (
           <WebView
             ref={webViewRef}
@@ -318,52 +387,58 @@ const Map = () => {
         )}
 
         {(isWebViewLoading || (isLoadingPoints && !isLoadingLocation)) && (
-          <ActivityIndicator
-            style={styles.webViewLoader}
-            size="large"
-            color="#0D1521"
-          />
+          <View style={styles.webViewLoader}>
+            <View style={styles.loaderCard}>
+              <ActivityIndicator size="large" color="#667eea" />
+              <Text style={styles.loaderText}>Harita yükleniyor...</Text>
+            </View>
+          </View>
         )}
 
-        <Portal>
-          <FAB.Group
-            open={fabOpen}
-            visible={true}
-            icon={fabOpen ? "close" : "layers-outline"}
-            color="#fff"
-            fabStyle={styles.fab}
-            actions={[
-              {
-                icon: "refresh",
-                label: "Yenile",
-                onPress: onRefresh,
-                style: styles.fabAction,
-                color: "#0D1521",
-                labelTextColor: "#0D1521",
-                size: "small",
-              },
-              {
-                icon: "map-marker-radius",
-                label: "Konumuma Git",
-                onPress: handleRecenter,
-                style: styles.fabAction,
-                color: "#0D1521",
-                labelTextColor: "#0D1521",
-                size: "small",
-              },
-              {
-                icon: "format-list-bulleted",
-                label: "Nokta Listesi",
-                onPress: () => router.navigate("/(tabs)/PilTeslimNoktalari"),
-                style: styles.fabAction,
-                color: "#0D1521",
-                labelTextColor: "#0D1521",
-                size: "small",
-              },
-            ]}
-            onStateChange={({ open }) => setFabOpen(open)}
-          />
-        </Portal>
+        {/* Floating Action Buttons */}
+        <View style={styles.fabContainer}>
+          {/* List Button */}
+          <TouchableOpacity
+            style={styles.fabButton}
+            onPress={() => router.navigate("/(tabs)/PilTeslimNoktalari")}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#667eea", "#764ba2"]}
+              style={styles.fabGradient}
+            >
+              <Text style={styles.fabIcon}>📋</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Location Button */}
+          <TouchableOpacity
+            style={styles.fabButton}
+            onPress={handleRecenter}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#4285F4", "#2563eb"]}
+              style={styles.fabGradient}
+            >
+              <Text style={styles.fabIcon}>🎯</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Refresh Button */}
+          <TouchableOpacity
+            style={styles.fabButton}
+            onPress={onRefresh}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#10b981", "#059669"]}
+              style={styles.fabGradient}
+            >
+              <Text style={styles.fabIcon}>🔄</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
     </PaperProvider>
   );
@@ -381,26 +456,93 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 30,
-    backgroundColor: "#f5f5f5",
+    padding: 20,
   },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 17,
-    color: "#555",
+  loadingCard: {
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    padding: 40,
+    alignItems: "center",
+    width: width * 0.85,
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
   },
-  errorText: {
-    marginTop: 15,
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#D32F2F",
-    textAlign: "center",
+  loadingIconContainer: {
+    marginBottom: 20,
   },
-  errorSubText: {
+  loadingIcon: {
+    fontSize: 80,
+  },
+  spinner: {
+    marginVertical: 20,
+  },
+  loadingTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#2d3748",
     marginTop: 10,
-    fontSize: 15,
-    color: "#444",
     textAlign: "center",
+  },
+  loadingSubtitle: {
+    fontSize: 16,
+    color: "#718096",
+    marginTop: 10,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  errorCard: {
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    padding: 40,
+    alignItems: "center",
+    width: width * 0.85,
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  errorIcon: {
+    fontSize: 80,
+    marginBottom: 20,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#2d3748",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: "#718096",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 30,
+  },
+  retryButton: {
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  retryButtonGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    alignItems: "center",
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
   },
   webViewLoader: {
     position: "absolute",
@@ -410,13 +552,78 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
   },
-  fab: {
-    backgroundColor: "#0D1521",
+  loaderCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 30,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  fabAction: {
-    backgroundColor: "white",
+  loaderText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: "#2d3748",
+    fontWeight: "600",
+  },
+  infoBadge: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    zIndex: 10,
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  infoBadgeGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  infoBadgeIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  infoBadgeText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#2d3748",
+  },
+  fabContainer: {
+    position: "absolute",
+    bottom: 150,
+    right: 20,
+    gap: 5,
+  },
+  fabButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 30,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabGradient: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fabIcon: {
+    fontSize: 18,
   },
 });
 
