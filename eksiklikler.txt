@@ -1,6 +1,6 @@
 (eklendi)siparişlerim kısmı eklenecek
-kişisel bilgileri düzenleme kısmı olacak 
-topluluk sıralaması da olacak en çok pil toplayan kişiler için
+(güncellendi) kişisel bilgileri düzenleme kısmı olacak 
+(güncellendi) topluluk sıralaması da olacak en çok pil toplayan kişiler için
 uygulama içi ikonlarda düzenlenecek
 
 görevlilere özel arayüz geliştirilecek pil analizi için

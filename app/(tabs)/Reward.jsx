@@ -1,11 +1,14 @@
 import { useAuth } from "@/context/AuthContext";
+import { createUserReward, getRewards } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -13,17 +16,21 @@ import {
 } from "react-native";
 import {
   ActivityIndicator,
+  IconButton,
   Modal,
   Portal,
+  ProgressBar,
+  Surface,
   Text,
   TextInput,
 } from "react-native-paper";
+import Toast from "react-native-toast-message";
 import Header from "../../components/Header";
-import { createUserReward, getRewards } from "../../services/api";
 
-const { width, height } = Dimensions.get("window");
-const CARD_MARGIN = 12;
-const CARD_WIDTH = (width - CARD_MARGIN * 6) / 2;
+const { width } = Dimensions.get("window");
+const COLUMNS = 2;
+const SPACING = 15;
+const CARD_WIDTH = (width - SPACING * (COLUMNS + 1)) / COLUMNS;
 
 const Reward = () => {
   const [visible, setVisible] = useState(false);
@@ -34,59 +41,46 @@ const Reward = () => {
   const [formData, setFormData] = useState({ address: "" });
 
   const { user, updateUser } = useAuth();
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const cardAnims = useRef([]).current;
-
-  const showModal = (reward) => {
-    setSelectedReward(reward);
-    setFormData({ address: "" });
-    setVisible(true);
-  };
-
-  const hideModal = () => setVisible(false);
 
   useEffect(() => {
     getRewards()
       .then((response) => {
         setRewards(response.data);
         setLoading(false);
-
-        // Fade-in animasyonu
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 500,
+          duration: 800,
           useNativeDriver: true,
         }).start();
-
-        // Kart animasyonları
-        response.data.forEach((_, index) => {
-          if (!cardAnims[index]) {
-            cardAnims[index] = new Animated.Value(0);
-          }
-          Animated.timing(cardAnims[index], {
-            toValue: 1,
-            duration: 400,
-            delay: index * 80,
-            useNativeDriver: true,
-          }).start();
-        });
       })
       .catch((error) => {
-        console.error("Ödüller alınırken hata oluştu:", error);
+        console.error("Ödül hatası:", error);
         setLoading(false);
+        Toast.show({
+          type: "error",
+          text1: "Hata",
+          text2: "Bağlantı sorunu oluştu.",
+        });
       });
   }, []);
 
+  const showModal = (reward) => {
+    setSelectedReward(reward);
+    setFormData({ address: user?.adress || "" });
+    setVisible(true);
+  };
+
+  const hideModal = () => setVisible(false);
+
   const handleConfirmOrder = () => {
     if (!formData.address.trim()) {
-      alert("Lütfen teslimat adresini girin.");
-      return;
-    }
-
-    if (user.point < selectedReward.point) {
-      alert(
-        `Yetersiz puan! Gerekli: ${selectedReward.point}, Mevcut: ${user.point}`
-      );
+      Toast.show({
+        type: "error",
+        text1: "Eksik Bilgi",
+        text2: "Teslimat adresi gerekli.",
+      });
       return;
     }
 
@@ -97,117 +91,103 @@ const Reward = () => {
     })
       .then((response) => {
         const newPoint =
-          response.updated_point || user.point - selectedReward.point;
+          response.updated_point !== undefined
+            ? response.updated_point
+            : user.point - selectedReward.point;
+
         updateUser({ ...user, point: newPoint });
-        alert(`🎉 Sipariş başarıyla alındı!\n\nKalan puan: ${newPoint}`);
+
+        Toast.show({
+          type: "success",
+          text1: "Tebrikler! 🎁",
+          text2: "Ödül talebiniz alındı.",
+        });
         hideModal();
       })
       .catch((error) => {
-        console.error("Sipariş hatası:", error);
-        alert("❌ Sipariş oluşturulamadı. Lütfen tekrar deneyin.");
+        Toast.show({
+          type: "error",
+          text1: "Hata",
+          text2: "İşlem gerçekleştirilemedi.",
+        });
       })
       .finally(() => setModalLoading(false));
   };
 
-  const renderItem = ({ item, index }) => {
-    if (!cardAnims[index]) {
-      cardAnims[index] = new Animated.Value(1);
-    }
-
+  const renderItem = ({ item }) => {
     const hasEnoughPoints = user?.point >= item.point;
+    const progress = Math.min((user?.point || 0) / item.point, 1);
+
+    const scaleAnim = fadeAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.9, 1],
+    });
 
     return (
       <Animated.View
-        style={[
-          styles.cardWrapper,
-          {
-            opacity: cardAnims[index],
-            transform: [
-              {
-                translateY: cardAnims[index].interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [30, 0],
-                }),
-              },
-              {
-                scale: cardAnims[index].interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.9, 1],
-                }),
-              },
-            ],
-          },
-        ]}
+        style={{ transform: [{ scale: scaleAnim }], opacity: fadeAnim }}
       >
         <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={() => showModal(item)}
+          activeOpacity={0.85}
+          onPress={() => hasEnoughPoints && showModal(item)}
           disabled={!hasEnoughPoints}
+          style={styles.cardContainer}
         >
-          <View style={styles.card}>
-            {/* Image Container */}
-            <View style={styles.imageContainer}>
+          <Surface style={styles.card} elevation={3}>
+            <View style={styles.imageWrapper}>
               <Image
                 source={{ uri: item.image_url }}
-                style={styles.cardImage}
+                style={[styles.cardImage, !hasEnoughPoints && styles.grayscale]}
                 resizeMode="cover"
               />
+              <View style={styles.pointBadgeOverlay}>
+                <Text style={styles.pointBadgeText}>{item.point}</Text>
+                <Text style={styles.pointBadgeIcon}>⭐</Text>
+              </View>
+
               {!hasEnoughPoints && (
                 <View style={styles.lockedOverlay}>
-                  <Text style={styles.lockedIcon}>🔒</Text>
-                  <Text style={styles.lockedText}>Yetersiz Puan</Text>
+                  <View style={styles.lockIconBg}>
+                    <IconButton icon="lock" iconColor="#fff" size={20} />
+                  </View>
                 </View>
               )}
             </View>
 
-            {/* Card Content */}
             <View style={styles.cardContent}>
-              <Text style={styles.productName} numberOfLines={2}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
                 {item.reward_name}
               </Text>
 
-              <View style={styles.pointBadge}>
+              {hasEnoughPoints ? (
                 <LinearGradient
-                  colors={
-                    hasEnoughPoints
-                      ? ["#fbbf24", "#f59e0b"]
-                      : ["#9ca3af", "#6b7280"]
-                  }
+                  colors={["#667eea", "#764ba2"]}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.pointBadgeGradient}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.actionButton}
                 >
-                  <Text style={styles.pointIcon}>⭐</Text>
-                  <Text style={styles.pointText}>{item.point}</Text>
+                  <Text style={styles.actionButtonText}>Hemen Al</Text>
                 </LinearGradient>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.orderButton,
-                  !hasEnoughPoints && styles.orderButtonDisabled,
-                ]}
-                onPress={() => showModal(item)}
-                disabled={!hasEnoughPoints}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={
-                    hasEnoughPoints
-                      ? ["#667eea", "#764ba2"]
-                      : ["#d1d5db", "#9ca3af"]
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.orderButtonGradient}
-                >
-                  <Text style={styles.orderButtonText}>
-                    {hasEnoughPoints ? "Sipariş Ver" : "Puan Yetersiz"}
+              ) : (
+                <View style={styles.progressContainer}>
+                  <View style={styles.progressTextRow}>
+                    <Text style={styles.progressLabel}>Hedef</Text>
+                    <Text style={styles.progressPercent}>
+                      {Math.floor(progress * 100)}%
+                    </Text>
+                  </View>
+                  <ProgressBar
+                    progress={progress}
+                    color="#FF9800"
+                    style={styles.progressBar}
+                  />
+                  <Text style={styles.missingPointsText}>
+                    {item.point - user.point} puan gerekli
                   </Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                </View>
+              )}
             </View>
-          </View>
+          </Surface>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -215,22 +195,8 @@ const Reward = () => {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <Header />
-        <LinearGradient
-          colors={["#667eea", "#764ba2"]}
-          style={styles.loadingContainer}
-        >
-          <View style={styles.loadingCard}>
-            <Text style={styles.loadingIcon}>🎁</Text>
-            <ActivityIndicator
-              size="large"
-              color="#667eea"
-              style={styles.spinner}
-            />
-            <Text style={styles.loadingText}>Ödüller yükleniyor...</Text>
-          </View>
-        </LinearGradient>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#6200ee" />
       </View>
     );
   }
@@ -239,150 +205,158 @@ const Reward = () => {
     <View style={styles.container}>
       <Header />
 
-      {/* Point Display Banner */}
-      <LinearGradient
-        colors={["#667eea", "#764ba2"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.pointBanner}
-      >
-        <View style={styles.pointBannerContent}>
-          <Text style={styles.pointLabel}>Toplam Puanınız</Text>
-          <View style={styles.pointValueContainer}>
-            <Text style={styles.pointValue}>{user?.point || 0}</Text>
-            <Text style={styles.pointStar}>⭐</Text>
+      <FlatList
+        data={rewards}
+        keyExtractor={(item) => item.reward_id.toString()}
+        renderItem={renderItem}
+        numColumns={COLUMNS}
+        contentContainerStyle={styles.listContent}
+        columnWrapperStyle={styles.columnWrapper}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <View style={styles.headerWrapper}>
+            <LinearGradient
+              colors={["#232526", "#414345"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.walletCard}
+            >
+              <View style={styles.decorativeCircle1} />
+              <View style={styles.decorativeCircle2} />
+
+              <View style={styles.walletTop}>
+                <View>
+                  <Text style={styles.walletLabel}>Toplam Puan</Text>
+                  <Text style={styles.walletBalance}>{user?.point || 0}</Text>
+                </View>
+                <View style={styles.walletIconBg}>
+                  <IconButton
+                    icon="trophy-variant"
+                    iconColor="#FFD700"
+                    size={28}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.walletBottom}>
+                <Text style={styles.walletSubText}>Harcayarak ödül kazan</Text>
+                <Text style={styles.walletId}>
+                  ID: {user?.id?.toString().padStart(6, "0")}
+                </Text>
+              </View>
+            </LinearGradient>
+            <Text style={styles.sectionTitle}>Mevcut Ödüller</Text>
           </View>
-        </View>
-      </LinearGradient>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>🎁</Text>
+            <Text style={styles.emptyText}>Şu an ödül bulunmuyor.</Text>
+          </View>
+        }
+      />
 
-      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <FlatList
-          data={rewards}
-          keyExtractor={(item) => item.reward_id.toString()}
-          renderItem={renderItem}
-          numColumns={2}
-          contentContainerStyle={styles.flatList}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={styles.emptyText}>Henüz ödül bulunmuyor</Text>
-            </View>
-          }
-        />
-      </Animated.View>
-
-      {/* Order Modal */}
+      {/* MODAL VE KLAVYE DÜZELTMESİ */}
       <Portal>
         <Modal
           visible={visible}
           onDismiss={hideModal}
-          contentContainerStyle={styles.modalContainer}
+          contentContainerStyle={styles.modalOverlay} // Özel stil değişikliği
         >
-          <View style={styles.modal}>
-            {/* Modal Header */}
-            <LinearGradient
-              colors={["#667eea", "#764ba2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.modalHeader}
-            >
-              <Text style={styles.modalTitle}>🎁 Sipariş Onayı</Text>
-              {selectedReward && (
-                <View style={styles.modalRewardInfo}>
-                  <Text style={styles.modalRewardName}>
-                    {selectedReward.reward_name}
-                  </Text>
-                  <View style={styles.modalPointBadge}>
-                    <Text style={styles.modalPointIcon}>⭐</Text>
-                    <Text style={styles.modalPointText}>
-                      {selectedReward.point} Puan
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </LinearGradient>
+          {/* KeyboardAvoidingView Tüm Modal'ı Kapsamalı */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardView}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+          >
+            {/* ScrollView ekleyerek içeriğin kaydırılabilir olmasını sağladık */}
+            <Surface style={styles.modalCard}>
+              <View style={styles.modalHandle} />
 
-            {/* Modal Body */}
-            <ScrollView
-              style={styles.modalBody}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.inputContainer}>
-                <View style={styles.inputIconContainer}>
-                  <Text style={styles.inputIcon}>📍</Text>
+              {/* İçeriği ScrollView içine alıyoruz */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollableModalContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Sipariş Özeti</Text>
+                  <IconButton
+                    icon="close-circle-outline"
+                    size={26}
+                    onPress={hideModal}
+                  />
                 </View>
+
+                {selectedReward && (
+                  <View style={styles.productRow}>
+                    <Image
+                      source={{ uri: selectedReward.image_url }}
+                      style={styles.productThumb}
+                    />
+                    <View style={styles.productInfo}>
+                      <Text style={styles.productName}>
+                        {selectedReward.reward_name}
+                      </Text>
+                      <Text style={styles.productPrice}>
+                        {selectedReward.point} Puan
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.divider} />
+
+                <Text style={styles.inputLabel}>Teslimat Adresi</Text>
                 <TextInput
-                  label="Teslimat Adresi"
+                  mode="outlined"
                   value={formData.address}
                   onChangeText={(text) =>
                     setFormData({ ...formData, address: text })
                   }
-                  mode="outlined"
-                  style={styles.input}
+                  placeholder="Mahalle, Cadde, No, İlçe/İl"
                   multiline
-                  numberOfLines={4}
-                  placeholder="Ödülünüzün teslim edileceği adresi girin..."
-                  outlineColor="#e5e7eb"
-                  activeOutlineColor="#667eea"
-                  theme={{
-                    colors: {
-                      primary: "#667eea",
-                      text: "#1f2937",
-                      placeholder: "#9ca3af",
-                    },
-                  }}
+                  numberOfLines={3}
+                  style={styles.textInput}
+                  outlineColor="#E0E0E0"
+                  activeOutlineColor="#6200ee"
+                  theme={{ roundness: 12 }}
                 />
-              </View>
 
-              {/* Info Box */}
-              <View style={styles.infoBox}>
-                <Text style={styles.infoIcon}>ℹ️</Text>
-                <View style={styles.infoTextContainer}>
-                  <Text style={styles.infoTitle}>Önemli Bilgi</Text>
-                  <Text style={styles.infoText}>
-                    Siparişiniz onaylandıktan sonra {selectedReward?.point} puan
-                    hesabınızdan düşülecektir.
+                <View style={styles.newBalanceContainer}>
+                  <Text style={styles.newBalanceLabel}>
+                    İşlem Sonrası Bakiye:
+                  </Text>
+                  <Text style={styles.newBalanceValue}>
+                    {(user?.point || 0) - (selectedReward?.point || 0)} P
                   </Text>
                 </View>
-              </View>
-            </ScrollView>
 
-            {/* Modal Footer */}
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={hideModal}
-                disabled={modalLoading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.cancelButtonText}>İptal</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={handleConfirmOrder}
-                disabled={modalLoading}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={["#667eea", "#764ba2"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.confirmButtonGradient}
+                <TouchableOpacity
+                  onPress={handleConfirmOrder}
+                  disabled={modalLoading}
+                  activeOpacity={0.9}
                 >
-                  {modalLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.confirmButtonText}>
-                      ✓ Siparişi Onayla
-                    </Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
+                  <LinearGradient
+                    colors={["#6200ee", "#7c4dff"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.confirmButton}
+                  >
+                    {modalLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.confirmButtonText}>
+                        Onayla ve Bitir
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+                {/* Klavye açıldığında ekstra boşluk için */}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            </Surface>
+          </KeyboardAvoidingView>
         </Modal>
       </Portal>
     </View>
@@ -392,311 +366,337 @@ const Reward = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#F4F6F8",
   },
-  loadingContainer: {
+  centerContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  loadingCard: {
-    backgroundColor: "#fff",
-    borderRadius: 30,
-    padding: 40,
-    alignItems: "center",
+  listContent: {
+    paddingBottom: 40,
+  },
+  columnWrapper: {
+    paddingHorizontal: SPACING,
+    justifyContent: "space-between",
+  },
+
+  // Wallet Styles
+  headerWrapper: {
+    padding: SPACING,
+    marginBottom: 5,
+  },
+  walletCard: {
+    borderRadius: 24,
+    padding: 24,
+    height: 180,
+    justifyContent: "space-between",
+    position: "relative",
+    overflow: "hidden",
+    elevation: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
   },
-  loadingIcon: {
-    fontSize: 80,
-    marginBottom: 20,
+  decorativeCircle1: {
+    position: "absolute",
+    top: -50,
+    right: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  spinner: {
-    marginVertical: 15,
+  decorativeCircle2: {
+    position: "absolute",
+    bottom: -80,
+    left: -20,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
-  loadingText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#2d3748",
-    marginTop: 10,
-  },
-  pointBanner: {
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  pointBannerContent: {
-    alignItems: "center",
-  },
-  pointLabel: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.9)",
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  pointValueContainer: {
+  walletTop: {
     flexDirection: "row",
-    alignItems: "center",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
-  pointValue: {
-    fontSize: 48,
-    fontWeight: "800",
+  walletLabel: {
+    color: "#B0B0B0",
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: 4,
+  },
+  walletBalance: {
     color: "#fff",
-    marginRight: 8,
+    fontSize: 36,
+    fontWeight: "bold",
+    letterSpacing: 1,
   },
-  pointStar: {
-    fontSize: 32,
+  walletIconBg: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    padding: 4,
   },
-  flatList: {
-    padding: CARD_MARGIN,
-    paddingBottom: 30,
+  walletBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
   },
-  cardWrapper: {
+  walletSubText: {
+    color: "#E0E0E0",
+    fontSize: 14,
+  },
+  walletId: {
+    color: "#757575",
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginTop: 20,
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+
+  // Cards
+  cardContainer: {
     width: CARD_WIDTH,
-    margin: CARD_MARGIN,
+    marginBottom: SPACING,
   },
   card: {
-    backgroundColor: "#fff",
     borderRadius: 20,
+    backgroundColor: "#fff",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
+    height: 250,
   },
-  imageContainer: {
+  imageWrapper: {
+    height: 140,
+    backgroundColor: "#F0F0F0",
     position: "relative",
-    width: "100%",
-    height: CARD_WIDTH * 0.85,
-    backgroundColor: "#f3f4f6",
   },
   cardImage: {
     width: "100%",
     height: "100%",
   },
+  grayscale: {
+    opacity: 0.6,
+    tintColor: "gray",
+  },
+  pointBadgeOverlay: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pointBadgeText: {
+    color: "#FFD700",
+    fontWeight: "bold",
+    fontSize: 12,
+    marginRight: 4,
+  },
+  pointBadgeIcon: {
+    fontSize: 10,
+  },
   lockedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
   },
-  lockedIcon: {
-    fontSize: 40,
-    marginBottom: 8,
-  },
-  lockedText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "700",
+  lockIconBg: {
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 30,
+    padding: 4,
   },
   cardContent: {
-    padding: 16,
+    padding: 12,
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2D3436",
+    marginBottom: 8,
+  },
+  actionButton: {
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  progressContainer: {
+    marginTop: 4,
+  },
+  progressTextRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  progressLabel: {
+    fontSize: 10,
+    color: "#888",
+  },
+  progressPercent: {
+    fontSize: 10,
+    color: "#FF9800",
+    fontWeight: "bold",
+  },
+  progressBar: {
+    height: 6,
+    borderRadius: 4,
+    backgroundColor: "#F0F0F0",
+  },
+  missingPointsText: {
+    fontSize: 10,
+    color: "#E53935",
+    marginTop: 4,
+    textAlign: "right",
+    fontWeight: "500",
+  },
+  emptyContainer: {
+    alignItems: "center",
+    marginTop: 50,
+  },
+  emptyEmoji: {
+    fontSize: 50,
+    marginBottom: 10,
+  },
+  emptyText: {
+    color: "#999",
+    fontSize: 16,
+  },
+
+  // MODAL VE KLAVYE STYLES
+  modalOverlay: {
+    justifyContent: "flex-end", // Klavye kapalıyken altta dursun
+    margin: 0,
+    flex: 1, // Portal içinde tam ekranı kapsaması için
+  },
+  keyboardView: {
+    flex: 1,
+    justifyContent: "flex-end", // Klavye açılınca yukarı itmesini sağlar
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "90%", // Ekranın %90'ından fazla yer kaplamasın
+  },
+  scrollableModalContent: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E0E0E0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#2D3436",
+  },
+  productRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9F9F9",
+    borderRadius: 16,
+    padding: 12,
+  },
+  productThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: "#eee",
+  },
+  productInfo: {
+    marginLeft: 16,
+    flex: 1,
   },
   productName: {
     fontSize: 16,
-    fontWeight: "700",
-    color: "#1f2937",
-    marginBottom: 12,
-    lineHeight: 22,
-    minHeight: 44,
+    fontWeight: "600",
+    color: "#333",
   },
-  pointBadge: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  pointBadgeGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  pointIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  pointText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  orderButton: {
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-  orderButtonDisabled: {
-    opacity: 0.6,
-  },
-  orderButtonGradient: {
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  orderButtonText: {
-    color: "#fff",
+  productPrice: {
     fontSize: 14,
+    color: "#6200ee",
     fontWeight: "700",
-    letterSpacing: 0.3,
+    marginTop: 4,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 80,
+  divider: {
+    height: 1,
+    backgroundColor: "#F0F0F0",
+    marginVertical: 20,
   },
-  emptyIcon: {
-    fontSize: 80,
-    marginBottom: 20,
-  },
-  emptyText: {
-    fontSize: 18,
+  inputLabel: {
+    fontSize: 14,
     fontWeight: "600",
-    color: "#6b7280",
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modal: {
-    backgroundColor: "#fff",
-    borderRadius: 30,
-    width: "100%",
-    maxWidth: 500,
-    maxHeight: height * 0.8,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 15,
-  },
-  modalHeader: {
-    padding: 24,
-    alignItems: "center",
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#fff",
-    marginBottom: 16,
-  },
-  modalRewardInfo: {
-    alignItems: "center",
-  },
-  modalRewardName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
+    color: "#555",
     marginBottom: 8,
-    textAlign: "center",
   },
-  modalPointBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  modalPointIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  modalPointText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  modalBody: {
-    flex: 1,
-    padding: 24,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputIconContainer: {
-    marginBottom: 12,
-  },
-  inputIcon: {
-    fontSize: 32,
-  },
-  input: {
+  textInput: {
     backgroundColor: "#fff",
     fontSize: 15,
   },
-  infoBox: {
+  newBalanceContainer: {
     flexDirection: "row",
-    backgroundColor: "#eff6ff",
-    padding: 16,
-    borderRadius: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: "#3b82f6",
-  },
-  infoIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  infoTextContainer: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#1e40af",
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 13,
-    color: "#1e40af",
-    lineHeight: 18,
-  },
-  modalFooter: {
-    flexDirection: "row",
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 16,
-    backgroundColor: "#f3f4f6",
+    justifyContent: "space-between",
     alignItems: "center",
-    justifyContent: "center",
+    marginVertical: 20,
+    padding: 12,
+    backgroundColor: "#FFF8E1",
+    borderRadius: 12,
   },
-  cancelButtonText: {
+  newBalanceLabel: {
+    fontSize: 14,
+    color: "#FFA000",
+    fontWeight: "600",
+  },
+  newBalanceValue: {
     fontSize: 16,
-    fontWeight: "700",
-    color: "#6b7280",
+    fontWeight: "bold",
+    color: "#FF8F00",
   },
   confirmButton: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  confirmButtonGradient: {
     paddingVertical: 16,
+    borderRadius: 16,
     alignItems: "center",
-    justifyContent: "center",
+    shadowColor: "#6200ee",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   confirmButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
     color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
   },
 });
 
